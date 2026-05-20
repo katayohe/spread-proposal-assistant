@@ -131,7 +131,7 @@ spread-proposal-assistant/
 1. `https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json` で**サービス一覧のメタデータ**（~100KB）を1回取得し、対象サービス（AmazonEC2, AmazonBedrock, AmazonS3 等）の `currentRegionIndexUrl` を確認
 2. そのサービスの region_index から、対象リージョン（例：`ap-northeast-1`）の `currentVersionUrl` を解決
 3. regional 本体 JSON（数百MB）は**ダウンロードせず HTTP ストリームで読む**。`ijson` で products を順次パースし、**対象 SKU を見つけた時点でストリームを閉じる**（全ダウンロードしない）
-4. 取得した単価は `/tmp/aws_price_cache/results/` に SKU 単位で1週間キャッシュ。2回目以降は本体に触らない
+4. 取得した単価は `~/.cache/aws_price_cache/results/` に SKU 単位で1週間キャッシュ。2回目以降は本体に触らない
 
 実装は `scripts/fetch_aws_price.py`。Python API として以下を提供：
 
@@ -175,7 +175,7 @@ python3 spread-proposal-assistant/scripts/fetch_aws_price.py s3 standard ap-nort
 ```bash
 # --template は省略可（スクリプトが同梱テンプレートを自動参照）
 python3 "{SKILL_ROOT}/scripts/fill_workbook.py" \
-  --data /tmp/payload.json \
+  --data "{WORK_DIR}/payload.json" \
   --output "{SKILL_ROOT}/../様式１＿研究計画調書＿{機関コード}＿{ローマ字氏名}.xlsx"
 ```
 

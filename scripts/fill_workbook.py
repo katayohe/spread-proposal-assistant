@@ -85,20 +85,29 @@ SHEET2_CELLS = {
 }
 
 # ======== 3枚目（予算明細） ========
-# 各費目の明細は行 6〜8（3行分）に入力。総計は数式セルに別途記入（または既存維持）。
-SHEET3_RANGES = {
-    # 設備備品費明細: A=品名、B=設置機関、C=数量、D=単価、E=金額(千円)
-    "equipment_rows": ("研究計画調書_3枚目", 6, ["A", "B", "C", "D", "E"]),
-    # 消耗品費明細: F=事項、G=金額
-    "consumables_rows": ("研究計画調書_3枚目", 6, ["F", "G"]),
-    # 謝金明細 行14〜16
-    "honorarium_rows": ("研究計画調書_3枚目", 14, ["A", "B"]),
-    # 国内旅費
-    "domestic_travel_rows": ("研究計画調書_3枚目", 14, ["C", "D"]),
-    # 外国旅費
-    "foreign_travel_rows": ("研究計画調書_3枚目", 14, ["E", "F"]),
-    # その他 行22〜26
-    "other_rows": ("研究計画調書_3枚目", 22, ["A", "B"]),
+# 各費目のヘッダー行（「事項」「品名・仕様」等のラベル行）を定義し、
+# データ書き込みはヘッダー行 +1 から開始する。
+# ハードコーディングを避け、ヘッダー行の定義を1箇所に集約する。
+SHEET3_HEADER_ROWS = {
+    "equipment": 5,       # 行5: 品名・仕様 / 設置機関 / 数量 / 単価 / 金額
+    "consumables": 5,     # 行5: 事項 / 金額（設備備品費と同じヘッダー行）
+    "honorarium": 14,     # 行14: 事項 / 金額
+    "domestic_travel": 14,  # 行14: 事項 / 金額
+    "foreign_travel": 14,   # 行14: 事項 / 金額
+    "other": 22,          # 行22: 事項 / 金額
+}
+
+# 各費目のデータ開始行（ヘッダー行 + 1）
+SHEET3_DATA_START = {k: v + 1 for k, v in SHEET3_HEADER_ROWS.items()}
+
+# 各費目の最大データ行数
+SHEET3_MAX_ROWS = {
+    "equipment": 3,       # 行6〜8
+    "consumables": 3,     # 行6〜8
+    "honorarium": 2,      # 行15〜16
+    "domestic_travel": 2, # 行15〜16
+    "foreign_travel": 2,  # 行15〜16
+    "other": 4,           # 行23〜26
 }
 
 SHEET3_TOTALS = {
@@ -113,7 +122,7 @@ SHEET3_TOTALS = {
 SHEET3_NECESSITIES = {
     "equipment_consumables_necessity": ("研究計画調書_3枚目", "A11"),  # merged A11:G11
     "honorarium_travel_necessity": ("研究計画調書_3枚目", "A19"),
-    "other_necessity": ("研究計画調書_3枚目", "A28"),
+    "other_necessity": ("研究計画調書_3枚目", "A29"),
 }
 
 # ======== 4枚目 ========
@@ -222,54 +231,71 @@ def fill(template_path: str, data: dict, output_path: str) -> list:
             setv(sheet, coord, data[key])
 
     # ---- 3枚目 ----
+    S3 = "研究計画調書_3枚目"
+
     # 設備備品費
+    start = SHEET3_DATA_START["equipment"]
+    max_count = SHEET3_MAX_ROWS["equipment"]
     for i, row in enumerate(data.get("equipment_rows", [])):
-        r = 6 + i
-        if r > 8:
-            warnings.append(f"設備備品費が3行を超えています（行 insert が必要）: {row}")
+        r = start + i
+        if i >= max_count:
+            warnings.append(f"設備備品費が{max_count}行を超えています（行 insert が必要）: {row}")
             continue
-        setv("研究計画調書_3枚目", f"A{r}", row.get("name", ""))
-        setv("研究計画調書_3枚目", f"B{r}", row.get("org", ""))
-        setv("研究計画調書_3枚目", f"C{r}", row.get("qty"))
-        setv("研究計画調書_3枚目", f"D{r}", row.get("unit_price"))
-        setv("研究計画調書_3枚目", f"E{r}", row.get("amount"))
+        setv(S3, f"A{r}", row.get("name", ""))
+        setv(S3, f"B{r}", row.get("org", ""))
+        setv(S3, f"C{r}", row.get("qty"))
+        setv(S3, f"D{r}", row.get("unit_price"))
+        setv(S3, f"E{r}", row.get("amount"))
 
+    start = SHEET3_DATA_START["consumables"]
+    max_count = SHEET3_MAX_ROWS["consumables"]
     for i, row in enumerate(data.get("consumables_rows", [])):
-        r = 6 + i
-        if r > 8:
-            warnings.append(f"消耗品費が3行超: {row}")
+        r = start + i
+        if i >= max_count:
+            warnings.append(f"消耗品費が{max_count}行超: {row}")
             continue
-        setv("研究計画調書_3枚目", f"F{r}", row.get("item", ""))
-        setv("研究計画調書_3枚目", f"G{r}", row.get("amount"))
+        setv(S3, f"F{r}", row.get("item", ""))
+        setv(S3, f"G{r}", row.get("amount"))
 
+    start = SHEET3_DATA_START["honorarium"]
+    max_count = SHEET3_MAX_ROWS["honorarium"]
     for i, row in enumerate(data.get("honorarium_rows", [])):
-        r = 14 + i
-        if r > 16:
+        r = start + i
+        if i >= max_count:
+            warnings.append(f"謝金が{max_count}行超: {row}")
             continue
-        setv("研究計画調書_3枚目", f"A{r}", row.get("item", ""))
-        setv("研究計画調書_3枚目", f"B{r}", row.get("amount"))
+        setv(S3, f"A{r}", row.get("item", ""))
+        setv(S3, f"B{r}", row.get("amount"))
 
+    start = SHEET3_DATA_START["domestic_travel"]
+    max_count = SHEET3_MAX_ROWS["domestic_travel"]
     for i, row in enumerate(data.get("domestic_travel_rows", [])):
-        r = 14 + i
-        if r > 16:
+        r = start + i
+        if i >= max_count:
+            warnings.append(f"国内旅費が{max_count}行超: {row}")
             continue
-        setv("研究計画調書_3枚目", f"C{r}", row.get("item", ""))
-        setv("研究計画調書_3枚目", f"D{r}", row.get("amount"))
+        setv(S3, f"C{r}", row.get("item", ""))
+        setv(S3, f"D{r}", row.get("amount"))
 
+    start = SHEET3_DATA_START["foreign_travel"]
+    max_count = SHEET3_MAX_ROWS["foreign_travel"]
     for i, row in enumerate(data.get("foreign_travel_rows", [])):
-        r = 14 + i
-        if r > 16:
+        r = start + i
+        if i >= max_count:
+            warnings.append(f"外国旅費が{max_count}行超: {row}")
             continue
-        setv("研究計画調書_3枚目", f"E{r}", row.get("item", ""))
-        setv("研究計画調書_3枚目", f"F{r}", row.get("amount"))
+        setv(S3, f"E{r}", row.get("item", ""))
+        setv(S3, f"F{r}", row.get("amount"))
 
+    start = SHEET3_DATA_START["other"]
+    max_count = SHEET3_MAX_ROWS["other"]
     for i, row in enumerate(data.get("other_rows", [])):
-        r = 22 + i
-        if r > 26:
-            warnings.append(f"その他費目が5行超: {row}")
+        r = start + i
+        if i >= max_count:
+            warnings.append(f"その他費目が{max_count}行超: {row}")
             continue
-        setv("研究計画調書_3枚目", f"A{r}", row.get("item", ""))
-        setv("研究計画調書_3枚目", f"B{r}", row.get("amount"))
+        setv(S3, f"A{r}", row.get("item", ""))
+        setv(S3, f"B{r}", row.get("amount"))
 
     # 各費目の総計：数式ではなく数値で直接書き込む
     # （LibreOffice の recalc を通すとフォント色や条件付き書式が劣化するため、
@@ -277,12 +303,12 @@ def fill(template_path: str, data: dict, output_path: str) -> list:
     def sum_amount(rows, key="amount"):
         return sum((r.get(key) or 0) for r in rows)
 
-    setv("研究計画調書_3枚目", "E9", sum_amount(data.get("equipment_rows", [])))
-    setv("研究計画調書_3枚目", "G9", sum_amount(data.get("consumables_rows", [])))
-    setv("研究計画調書_3枚目", "B17", sum_amount(data.get("honorarium_rows", [])))
-    setv("研究計画調書_3枚目", "D17", sum_amount(data.get("domestic_travel_rows", [])))
-    setv("研究計画調書_3枚目", "F17", sum_amount(data.get("foreign_travel_rows", [])))
-    setv("研究計画調書_3枚目", "B27", sum_amount(data.get("other_rows", [])))
+    setv(S3, "E9", sum_amount(data.get("equipment_rows", [])))
+    setv(S3, "G9", sum_amount(data.get("consumables_rows", [])))
+    setv(S3, "B17", sum_amount(data.get("honorarium_rows", [])))
+    setv(S3, "D17", sum_amount(data.get("domestic_travel_rows", [])))
+    setv(S3, "F17", sum_amount(data.get("foreign_travel_rows", [])))
+    setv(S3, "B27", sum_amount(data.get("other_rows", [])))
 
     # 必要性
     for key, (sheet, coord) in SHEET3_NECESSITIES.items():
