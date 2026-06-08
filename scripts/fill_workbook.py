@@ -1,360 +1,477 @@
-"""form1_proposal.xlsx（様式1＿研究計画調書.xlsx）への書き込みヘルパー
+"""第2回 SPReAD 様式1 への書き込み
 
-既存のテンプレートをコピーし、ヒアリング結果の dict を受けて対応セルに値を書く。
-既存の数式・書式は保持する。openpyxl のみ使用。
+テンプレ xlsx を ZIP として開き、対象シートの空セルだけを XML 文字列置換で
+書き換える。テンプレートの構造（リッチテキスト・条件付き書式・データ検証・
+名前空間・customXml・printerSettings 等）はバイト単位でそのまま保持される。
 
-使い方:
-    python fill_workbook.py \\
-        --template "<SKILL_ROOT>/call_materials/application_forms/form1_proposal.xlsx" \\
-        --data data.json \\
-        --output "<WORK_DIR>/様式１＿研究計画調書＿12345＿YAMADA_Taro.xlsx"
+書き込み対象:
+  - 空セル `<c r="C8" s="318"/>` を
+    `<c r="C8" s="318" t="inlineStr"><is><t xml:space="preserve">VALUE</t></is></c>`
+    に置換（文字列値）
+  - 数値値は `<c r="H6" s="318"><v>2026</v></c>` 形式
+  - 既値セル・数式セルは触らない
 
-data.json の形式は build_payload() コメント参照。
+シートと座標:
+  - sheet3.xml = 1枚目（基本情報）
+  - sheet4.xml = 2枚目（研究目的等）
+  - sheet5.xml = 3枚目（経費）
+  - sheet6.xml = 4枚目（API・計算資源）
+
+CLI:
+    python3 fill_workbook.py --data payload.json --output 様式1.xlsx
+    python3 fill_workbook.py --language en --data payload.json --output Form1.xlsx
 """
 
 from __future__ import annotations
 import argparse
 import json
-import shutil
+import re
+import zipfile
 from pathlib import Path
-from openpyxl import load_workbook
 
-# スキルルートは本ファイルの親ディレクトリの親（.../scripts/fill_workbook.py → .../）
+# スキルルート（このファイルの親の親）
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TEMPLATE = SKILL_ROOT / "call_materials" / "application_forms" / "form1_proposal.xlsx"
+TEMPLATE_DIR = SKILL_ROOT / "call_materials" / "application_forms"
+TEMPLATE_JA = TEMPLATE_DIR / "2nd_form1_proposal.xlsx"
+TEMPLATE_EN = TEMPLATE_DIR / "2nd_form1_proposal_en.xlsx"
 
-# ======== 1枚目のセル割当 ========
-# （ラベルは A 列、入力値は B 列の結合セル開始点に書き込む）
-SHEET1_CELLS = {
-    # 基本情報
-    "apply_date": ("研究計画調書_1枚目", "A5"),  # 令和8年XX月XX日
-    "erad_researcher_number": ("研究計画調書_1枚目", "B6"),  # 8桁
-    "email": ("研究計画調書_1枚目", "B7"),
-    "name_kana": ("研究計画調書_1枚目", "D8"),  # フリガナ値 (B8="フリガナ" ラベル、D8:I8 が入力)
-    "name_kanji": ("研究計画調書_1枚目", "D9"),
-    "birthdate": ("研究計画調書_1枚目", "B10"),
-    "erad_institution_code": ("研究計画調書_1枚目", "B11"),
-    "institution": ("研究計画調書_1枚目", "B12"),
-    "department": ("研究計画調書_1枚目", "B13"),
-    "position": ("研究計画調書_1枚目", "B14"),
-    "category": ("研究計画調書_1枚目", "B15"),  # 区分（リスト選択）
-    "research_field": ("研究計画調書_1枚目", "B17"),
-    "main_usecase": ("研究計画調書_1枚目", "B18"),
-    "main_usecase_other": ("研究計画調書_1枚目", "B19"),
-    # 研究課題名
-    "title_ja": ("研究計画調書_1枚目", "B22"),
-    "title_en": ("研究計画調書_1枚目", "B22"),  # B22 merged B22:K22; 日本語のみが入る設計
-    # 現在の具体的な活用方法
-    "ai_usage_ja": ("研究計画調書_1枚目", "B26"),
+# シート→XMLパス対応
+# 日本語版・英語版とも同じ（テンプレートが共通設計のため）
+SHEET_PATHS = {
+    "sheet1": "xl/worksheets/sheet3.xml",  # 1枚目
+    "sheet2": "xl/worksheets/sheet4.xml",  # 2枚目
+    "sheet3": "xl/worksheets/sheet5.xml",  # 3枚目
+    "sheet4": "xl/worksheets/sheet6.xml",  # 4枚目
 }
 
-# サブユースケース（B20,D20,F20,H20,J20, B21,D21,F21,H21）は順番に 8 項目
+
+def _xml_escape_text(s: str) -> str:
+    """XMLテキストノード用エスケープ（属性値ではない）"""
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _formula_inject_guard(value: str) -> str:
+    """CSV インジェクション類似攻撃対策。
+    先頭が = + - @ TAB CR LF の文字列はシングルクォートを前置して
+    Excel が数式評価しないようにする。Excel 上では ' は隠れて元の文字列に見える。
+    """
+    if value and value[0] in ("=", "+", "-", "@", "\t", "\r", "\n"):
+        return "'" + value
+    return value
+
+
+def _make_inline_str_cell(coord: str, style: str, text: str) -> str:
+    """空セルを inlineStr セルに置換するXMLフラグメントを生成"""
+    text = _formula_inject_guard(text)
+    escaped = _xml_escape_text(text)
+    style_attr = f' s="{style}"' if style else ""
+    return (
+        f'<c r="{coord}"{style_attr} t="inlineStr">'
+        f'<is><t xml:space="preserve">{escaped}</t></is>'
+        f'</c>'
+    )
+
+
+def _make_number_cell(coord: str, style: str, value) -> str:
+    """空セルを数値セルに置換するXMLフラグメントを生成"""
+    style_attr = f' s="{style}"' if style else ""
+    return f'<c r="{coord}"{style_attr}><v>{value}</v></c>'
+
+
+def _set_cell(xml: str, coord: str, value, *, as_number: bool = False) -> str:
+    """sheet*.xml の指定セル（座標 coord, 例 "C8"）を value で書き換える。
+
+    対象は **空セル** `<c r="..." s="..."/>` のみ。
+    既値セル（<v> や <is> や <f> を含む）は触らない（混乱を避けるため）。
+    """
+    if value is None or value == "":
+        return xml
+
+    # 空セル（self-closing）パターン: <c r="C8" s="318"/> または <c r="C8"/>
+    # 属性順は s が後ろ、または s 無し。s 値は数字のみ。
+    pat_with_s = re.compile(
+        r'<c\s+r="' + re.escape(coord) + r'"\s+s="(\d+)"\s*/>'
+    )
+    pat_no_s = re.compile(
+        r'<c\s+r="' + re.escape(coord) + r'"\s*/>'
+    )
+
+    m = pat_with_s.search(xml)
+    if m:
+        style = m.group(1)
+        if as_number:
+            replacement = _make_number_cell(coord, style, value)
+        else:
+            replacement = _make_inline_str_cell(coord, style, str(value))
+        return pat_with_s.sub(replacement, xml, count=1)
+
+    m = pat_no_s.search(xml)
+    if m:
+        if as_number:
+            replacement = _make_number_cell(coord, "", value)
+        else:
+            replacement = _make_inline_str_cell(coord, "", str(value))
+        return pat_no_s.sub(replacement, xml, count=1)
+
+    # 空セルが見つからない（既に値が入っている等）。スキップ。
+    return xml
+
+
+# ======== 1枚目セル割当 ========
+# キー → (座標, 数値か否か)
+SHEET1_CELLS_TEXT = {
+    "erad_researcher_number": ("C8", True),
+    "email": ("C10", False),
+    "name_kana": ("D12", False),
+    "name_kanji": ("D13", False),
+    "birth_year": ("C15", True),
+    "birth_month": ("F15", True),
+    "birth_day": ("H15", True),
+    "erad_institution_code": ("C16", True),
+    "institution": ("C18", False),
+    "department": ("C19", False),
+    "position": ("C20", False),
+    "institution_category": ("C21", False),
+    "applicant_category": ("C23", False),
+    "research_field": ("C27", False),
+    "main_usecase": ("C29", False),
+    "main_usecase_other": ("C31", False),
+    "title": ("C35", False),
+    "ai_usage_text": ("C42", False),
+}
+
+# 提出日（H6/J6/L6）— 数値
+SHEET1_DATE = {
+    "submit_year": ("H6", True),
+    "submit_month": ("J6", True),
+    "submit_day": ("L6", True),
+}
+
+# サブユースケース（"Y" を入れる8セル → ラベル）
 SUBCASE_CELLS = [
-    ("B20", "1.学習用データセット構築"),
-    ("D20", "2.既存モデルの適応"),
-    ("F20", "3.AIモデル開発"),
-    ("H20", "4.既存モデル評価"),
-    ("J20", "5.実験自動化・自律化"),
-    ("B21", "6.シミュレーション・デジタルツイン"),
-    ("D21", "7.発見・設計支援"),
-    ("F21", "8.高度データ解析・モデリング"),
+    ("C32", "1.学習用データセット構築"),
+    ("E32", "2.既存モデルの適応"),
+    ("G32", "3.AIモデル開発"),
+    ("I32", "4.既存モデル評価"),
+    ("C33", "5.実験自動化・自律化"),
+    ("E33", "6.シミュレーション・デジタルツイン"),
+    ("G33", "7.発見・設計支援"),
+    ("I33", "8.高度データ解析・モデリング"),
 ]
 
-# 現在のAI利活用度合い（10項目）
+# AI活用度（"Y" を入れる10セル → ラベル）
 AI_USAGE_CELLS = [
-    ("B24", "研究でAIをまったく使っていない"),
-    ("D24", "研究そのもの以外の業務でAIを使っている"),
-    ("F24", "文献探索や要約にAIを使っている"),
-    ("H24", "論文執筆や発表資料にAIを使っている"),
-    ("J24", "仮説検討やアイデア出しにAIを使っている"),
-    ("B25", "自作コード含めAIでデータ分析"),
-    ("D25", "AI分析結果を論文・発表で発表"),
-    ("F25", "APIで既存AIを研究プロセスに組み込み"),
-    ("H25", "AIモデルの開発経験あり"),
-    ("J25", "新しい基盤モデル開発の経験あり"),
+    ("C39", "研究でAIをまったく使っていない"),
+    ("E39", "研究そのもの以外の業務でAIを使っている"),
+    ("G39", "文献探索や要約にAIを使っている"),
+    ("I39", "論文執筆や発表資料にAIを使っている"),
+    ("K39", "仮説検討やアイデア出しにAIを使っている"),
+    ("C40", "自作コード含めAIでデータ分析"),
+    ("E40", "AI分析結果を論文・発表で発表"),
+    ("G40", "APIで既存AIを研究プロセスに組み込み"),
+    ("I40", "AIモデルの開発経験あり"),
+    ("K40", "新しい基盤モデル開発の経験あり"),
 ]
 
-# ======== 2枚目 ========
-SHEET2_CELLS = {
-    "purpose_ja": ("研究計画調書_2枚目", "A3"),
-    "method_ja": ("研究計画調書_2枚目", "A5"),
-    "ai_rationale_ja": ("研究計画調書_2枚目", "A7"),
-    "goals_ja": ("研究計画調書_2枚目", "A9"),
-    "knowhow_ja": ("研究計画調書_2枚目", "A11"),
-    "achievements": ("研究計画調書_2枚目", "A15"),
+
+def _label_match(label: str, selections: list) -> bool:
+    """label と selections のいずれかが一致するか判定"""
+    head = label.split("（")[0].split("(")[0].split("・")[0].strip()
+    head_short = head[:6] if len(head) >= 6 else head
+    for s in selections:
+        s_norm = str(s).strip()
+        if not s_norm:
+            continue
+        if s_norm in label or label in s_norm:
+            return True
+        if head and head in s_norm:
+            return True
+        if head_short and head_short in s_norm:
+            return True
+    return False
+
+
+# ======== 2枚目セル割当 ========
+SHEET2_TEXT = {
+    "purpose": "D8",
+    "method": "D9",
+    "ai_rationale": "D10",
+    "goals": "D11",
+    "knowhow": "D12",
+    "publication_policy": "D13",
+}
+SHEET2_ACHIEVEMENT_CELLS = ["D14", "D15", "D16", "D17", "D18"]
+
+
+# ======== 3枚目セル割当 ========
+S3_EQUIPMENT_ROWS = range(11, 31)
+S3_CONSUMABLES_ROWS = range(11, 31)
+S3_HONORARIUM_ROWS = range(40, 60)
+S3_DOMESTIC_TRAVEL_ROWS = range(40, 60)
+S3_FOREIGN_TRAVEL_ROWS = range(40, 60)
+S3_OTHER_ROWS = range(69, 89)
+
+S3_NECESSITY_CELLS = {
+    "equipment_consumables_necessity": "C34",
+    "honorarium_travel_necessity": "C63",
+    "other_necessity": "C92",
 }
 
-# ======== 3枚目（予算明細） ========
-# 各費目のヘッダー行（「事項」「品名・仕様」等のラベル行）を定義し、
-# データ書き込みはヘッダー行 +1 から開始する。
-# ハードコーディングを避け、ヘッダー行の定義を1箇所に集約する。
-SHEET3_HEADER_ROWS = {
-    "equipment": 5,       # 行5: 品名・仕様 / 設置機関 / 数量 / 単価 / 金額
-    "consumables": 5,     # 行5: 事項 / 金額（設備備品費と同じヘッダー行）
-    "honorarium": 14,     # 行14: 事項 / 金額
-    "domestic_travel": 14,  # 行14: 事項 / 金額
-    "foreign_travel": 14,   # 行14: 事項 / 金額
-    "other": 22,          # 行22: 事項 / 金額
-}
 
-# 各費目のデータ開始行（ヘッダー行 + 1）
-SHEET3_DATA_START = {k: v + 1 for k, v in SHEET3_HEADER_ROWS.items()}
-
-# 各費目の最大データ行数
-SHEET3_MAX_ROWS = {
-    "equipment": 3,       # 行6〜8
-    "consumables": 3,     # 行6〜8
-    "honorarium": 2,      # 行15〜16
-    "domestic_travel": 2, # 行15〜16
-    "foreign_travel": 2,  # 行15〜16
-    "other": 4,           # 行23〜26
-}
-
-SHEET3_TOTALS = {
-    "equipment_total": ("研究計画調書_3枚目", "E9"),
-    "consumables_total": ("研究計画調書_3枚目", "G9"),
-    "honorarium_total": ("研究計画調書_3枚目", "B17"),
-    "domestic_travel_total": ("研究計画調書_3枚目", "D17"),
-    "foreign_travel_total": ("研究計画調書_3枚目", "F17"),
-    "other_total": ("研究計画調書_3枚目", "B27"),
-}
-
-SHEET3_NECESSITIES = {
-    "equipment_consumables_necessity": ("研究計画調書_3枚目", "A11"),  # merged A11:G11
-    "honorarium_travel_necessity": ("研究計画調書_3枚目", "A19"),
-    "other_necessity": ("研究計画調書_3枚目", "A29"),
-}
-
-# ======== 4枚目 ========
-# API費用テーブル: 行5〜14、列 B(処理対象) C(金額千円) D(算定根拠、merged D:E)
-# 計算資源費用テーブル: 行18〜27、列 B(GPU種類) C(選定理由) D(金額千円) E(算定根拠、merged D:E)
-# ただし見た目では D14:E14 等が merged されている → 算定根拠は D列に書けばOK
-SHEET4_API_START_ROW = 5
-SHEET4_COMPUTE_START_ROW = 18
+# ======== 4枚目セル割当 ========
+S4_API_ROWS = range(9, 19)
+S4_COMPUTE_ROWS = range(22, 32)
 
 
-def build_empty_payload() -> dict:
-    """ヒアリングで埋めていく辞書のひな形"""
-    return {
-        "filename": "様式１＿研究計画調書＿XXXXX＿YAMADA Taro.xlsx",
-        # 1枚目
-        "apply_date": "令和8年XX月XX日",
-        "erad_researcher_number": "",
-        "email": "",
-        "name_kana": "",
-        "name_kanji": "",
-        "birthdate": "",
-        "erad_institution_code": "",
-        "institution": "",
-        "department": "",
-        "position": "",
-        "category": "",
-        "research_field": "",
-        "main_usecase": "",
-        "main_usecase_other": "",
-        "subcases": [],   # 例: ["3.AIモデル開発", "8.高度データ解析・モデリング"]
-        "title_ja": "",
-        "title_en": "",
-        "ai_usage_levels": [],  # 例: ["APIで既存AIを研究プロセスに組み込み"]
-        "ai_usage_ja": "",
-        "ai_usage_en": "",
-        # 2枚目
-        "purpose_ja": "",
-        "purpose_en": "",
-        "method_ja": "",
-        "method_en": "",
-        "ai_rationale_ja": "",
-        "ai_rationale_en": "",
-        "goals_ja": "",
-        "goals_en": "",
-        "knowhow_ja": "",
-        "knowhow_en": "",
-        "achievements": "",  # 改行区切り（最大5件）
-        # 3枚目
-        "equipment_rows": [],  # [{"name":..., "org":..., "qty":.., "unit_price":..,"amount":..}, ...]
-        "consumables_rows": [],  # [{"item":..., "amount":..}, ...]
-        "honorarium_rows": [],
-        "domestic_travel_rows": [],
-        "foreign_travel_rows": [],
-        "other_rows": [],
-        "equipment_consumables_necessity": "",
-        "honorarium_travel_necessity": "",
-        "other_necessity": "",
-        # 4枚目
-        "api_rows": [],  # [{"target":..., "amount":..., "basis":...}, ...]
-        "compute_rows": [],  # [{"gpu":..., "rationale":..., "amount":..., "basis":...}, ...]
-    }
+def _write_sheet1(xml: str, data: dict) -> str:
+    # 提出日
+    for k, (coord, is_num) in SHEET1_DATE.items():
+        v = data.get(k)
+        if v not in (None, ""):
+            xml = _set_cell(xml, coord, v, as_number=is_num)
+    # 共通テキスト/数値
+    for k, (coord, is_num) in SHEET1_CELLS_TEXT.items():
+        v = data.get(k)
+        if v not in (None, ""):
+            xml = _set_cell(xml, coord, v, as_number=is_num)
+    # 学生フラグ
+    if data.get("is_student"):
+        xml = _set_cell(xml, "L20", "Y")
+    # サブユースケース
+    selected_subs = data.get("subcases") or []
+    for coord, label in SUBCASE_CELLS:
+        if _label_match(label, selected_subs):
+            xml = _set_cell(xml, coord, "Y")
+    # AI活用度
+    selected_levels = data.get("ai_usage_levels") or []
+    for coord, label in AI_USAGE_CELLS:
+        if _label_match(label, selected_levels):
+            xml = _set_cell(xml, coord, "Y")
+    return xml
+
+
+def _write_sheet2(xml: str, data: dict) -> str:
+    # テキスト
+    for k, coord in SHEET2_TEXT.items():
+        v = data.get(k)
+        if v not in (None, ""):
+            xml = _set_cell(xml, coord, v)
+    # 業績（最大5件）
+    achievements = data.get("achievements") or []
+    if isinstance(achievements, str):
+        achievements = [a for a in achievements.split("\n") if a.strip()]
+    for i, item in enumerate(achievements[:5]):
+        if item:
+            xml = _set_cell(xml, SHEET2_ACHIEVEMENT_CELLS[i], item)
+    return xml
+
+
+def _write_sheet3(xml: str, data: dict) -> str:
+    # 設備備品費 (rows 11..30): D=item, E=org, G=unit_price, I=qty (J=数式は触らず)
+    rows = data.get("equipment_rows") or []
+    for i, row in enumerate(rows[: len(S3_EQUIPMENT_ROWS)]):
+        r = list(S3_EQUIPMENT_ROWS)[i]
+        if row.get("item"):
+            xml = _set_cell(xml, f"D{r}", row["item"])
+        if row.get("org"):
+            xml = _set_cell(xml, f"E{r}", row["org"])
+        if row.get("unit_price") not in (None, ""):
+            xml = _set_cell(xml, f"G{r}", row["unit_price"], as_number=True)
+        if row.get("qty") not in (None, ""):
+            xml = _set_cell(xml, f"I{r}", row["qty"], as_number=True)
+
+    # 消耗品費 (rows 11..30): M=item, N=amount
+    rows = data.get("consumables_rows") or []
+    for i, row in enumerate(rows[: len(S3_CONSUMABLES_ROWS)]):
+        r = list(S3_CONSUMABLES_ROWS)[i]
+        if row.get("item"):
+            xml = _set_cell(xml, f"M{r}", row["item"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"N{r}", row["amount"], as_number=True)
+
+    # 謝金 (rows 40..59): D=item, E=amount
+    rows = data.get("honorarium_rows") or []
+    for i, row in enumerate(rows[: len(S3_HONORARIUM_ROWS)]):
+        r = list(S3_HONORARIUM_ROWS)[i]
+        if row.get("item"):
+            xml = _set_cell(xml, f"D{r}", row["item"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"E{r}", row["amount"], as_number=True)
+
+    # 国内旅費 (rows 40..59): H=item, J=amount
+    rows = data.get("domestic_travel_rows") or []
+    for i, row in enumerate(rows[: len(S3_DOMESTIC_TRAVEL_ROWS)]):
+        r = list(S3_DOMESTIC_TRAVEL_ROWS)[i]
+        if row.get("item"):
+            xml = _set_cell(xml, f"H{r}", row["item"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"J{r}", row["amount"], as_number=True)
+
+    # 外国旅費 (rows 40..59): M=item, N=amount
+    rows = data.get("foreign_travel_rows") or []
+    for i, row in enumerate(rows[: len(S3_FOREIGN_TRAVEL_ROWS)]):
+        r = list(S3_FOREIGN_TRAVEL_ROWS)[i]
+        if row.get("item"):
+            xml = _set_cell(xml, f"M{r}", row["item"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"N{r}", row["amount"], as_number=True)
+
+    # その他 (rows 69..88): D=item, E=amount
+    rows = data.get("other_rows") or []
+    for i, row in enumerate(rows[: len(S3_OTHER_ROWS)]):
+        r = list(S3_OTHER_ROWS)[i]
+        if row.get("item"):
+            xml = _set_cell(xml, f"D{r}", row["item"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"E{r}", row["amount"], as_number=True)
+
+    # 必要性
+    for k, coord in S3_NECESSITY_CELLS.items():
+        v = data.get(k)
+        if v not in (None, ""):
+            xml = _set_cell(xml, coord, v)
+
+    return xml
+
+
+def _write_sheet4(xml: str, data: dict) -> str:
+    # API費用 (rows 9..18): D=target, E=amount, F=basis
+    rows = data.get("api_rows") or []
+    for i, row in enumerate(rows[: len(S4_API_ROWS)]):
+        r = list(S4_API_ROWS)[i]
+        if row.get("target"):
+            xml = _set_cell(xml, f"D{r}", row["target"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"E{r}", row["amount"], as_number=True)
+        if row.get("basis"):
+            xml = _set_cell(xml, f"F{r}", row["basis"])
+    # 計算資源費用 (rows 22..31): D=gpu, E=rationale, F=amount, G=basis
+    rows = data.get("compute_rows") or []
+    for i, row in enumerate(rows[: len(S4_COMPUTE_ROWS)]):
+        r = list(S4_COMPUTE_ROWS)[i]
+        if row.get("gpu"):
+            xml = _set_cell(xml, f"D{r}", row["gpu"])
+        if row.get("rationale"):
+            xml = _set_cell(xml, f"E{r}", row["rationale"])
+        if row.get("amount") not in (None, ""):
+            xml = _set_cell(xml, f"F{r}", row["amount"], as_number=True)
+        if row.get("basis"):
+            xml = _set_cell(xml, f"G{r}", row["basis"])
+    return xml
+
+
+def _enable_full_calc_on_load(workbook_xml: str) -> str:
+    """xl/workbook.xml の <calcPr> に fullCalcOnLoad="1" を付与する。
+
+    テンプレ由来の <calcPr calcId="191028"/> のままだと、Excel で開いた瞬間に
+    LEN(C35) などの数式セルが再計算されず、キャッシュ済みの <v>0</v> が
+    そのまま表示されてしまう。fullCalcOnLoad="1" を付けると、Excel は開いた
+    瞬間に全数式を強制再計算し、文字数カウントや経費合計が即座に正しい値に
+    なる。
+    """
+    # 既に fullCalcOnLoad が付いていればそのまま
+    if 'fullCalcOnLoad' in workbook_xml:
+        return workbook_xml
+    # <calcPr ... /> または <calcPr ...></calcPr>
+    pat_self = re.compile(r'<calcPr([^/]*?)/>')
+    m = pat_self.search(workbook_xml)
+    if m:
+        attrs = m.group(1)
+        # 末尾空白を除いて fullCalcOnLoad を追加
+        new_attrs = attrs.rstrip() + ' fullCalcOnLoad="1"'
+        return workbook_xml[:m.start()] + f'<calcPr{new_attrs}/>' + workbook_xml[m.end():]
+    pat_open = re.compile(r'<calcPr([^>]*?)>')
+    m = pat_open.search(workbook_xml)
+    if m:
+        attrs = m.group(1)
+        new_attrs = attrs.rstrip() + ' fullCalcOnLoad="1"'
+        return workbook_xml[:m.start()] + f'<calcPr{new_attrs}>' + workbook_xml[m.end():]
+    # calcPr 自体が無い場合は </workbook> 直前に挿入
+    if '</workbook>' in workbook_xml:
+        return workbook_xml.replace(
+            '</workbook>',
+            '<calcPr calcId="191028" fullCalcOnLoad="1"/></workbook>'
+        )
+    return workbook_xml
 
 
 def fill(template_path: str, data: dict, output_path: str) -> list:
-    """テンプレをコピーしてデータを書き込む。警告・注意メッセージのリストを返す
+    """テンプレートを ZIP コピーし、対象シートだけ XML 文字列置換で書き換える。
 
-    `rich_text=True` でロードすることで、セル内の部分的な赤字などの
-    リッチテキスト装飾を保持したまま保存できる（これをしないと
-    「(日本語：80文字以上400文字以内...)」などの赤字部分が黒字化する）。
+    openpyxl は使わない。テンプレ構造を一切変更しないため、Excel の修復ダイアログ
+    が出ない（出るならテンプレ自体が原因）。
     """
-    shutil.copy(template_path, output_path)
-    wb = load_workbook(output_path, rich_text=True)
-    warnings = []
+    warnings: list[str] = []
+    src = Path(template_path)
+    dst = Path(output_path)
 
-    def setv(sheet, coord, value):
-        if value is None or value == "":
-            return
-        ws = wb[sheet]
-        try:
-            ws[coord] = value
-        except Exception as e:
-            warnings.append(f"セル書き込み失敗 {sheet}!{coord}: {e}")
-
-    # ---- 1枚目 ----
-    for key, (sheet, coord) in SHEET1_CELLS.items():
-        if key == "title_en":
-            continue  # B22 は日本語のみ保持（英語は別セルが無いため日本語に含めない方針）
-        if key in data:
-            setv(sheet, coord, data[key])
-
-    # サブユースケース：True/False を順に書く
-    subs = set(data.get("subcases", []))
-    for coord, label in SUBCASE_CELLS:
-        is_selected = any(label in s or s in label for s in subs)
-        setv("研究計画調書_1枚目", coord, is_selected)
-
-    # AI利活用度合い
-    levels = set(data.get("ai_usage_levels", []))
-    for coord, label in AI_USAGE_CELLS:
-        is_selected = any(label[:10] in l or l[:10] in label for l in levels)
-        setv("研究計画調書_1枚目", coord, is_selected)
-
-    # ---- 2枚目 ----
-    for key, (sheet, coord) in SHEET2_CELLS.items():
-        if key in data:
-            setv(sheet, coord, data[key])
-
-    # ---- 3枚目 ----
-    S3 = "研究計画調書_3枚目"
-
-    # 設備備品費
-    start = SHEET3_DATA_START["equipment"]
-    max_count = SHEET3_MAX_ROWS["equipment"]
-    for i, row in enumerate(data.get("equipment_rows", [])):
-        r = start + i
-        if i >= max_count:
-            warnings.append(f"設備備品費が{max_count}行を超えています（行 insert が必要）: {row}")
-            continue
-        setv(S3, f"A{r}", row.get("name", ""))
-        setv(S3, f"B{r}", row.get("org", ""))
-        setv(S3, f"C{r}", row.get("qty"))
-        setv(S3, f"D{r}", row.get("unit_price"))
-        setv(S3, f"E{r}", row.get("amount"))
-
-    start = SHEET3_DATA_START["consumables"]
-    max_count = SHEET3_MAX_ROWS["consumables"]
-    for i, row in enumerate(data.get("consumables_rows", [])):
-        r = start + i
-        if i >= max_count:
-            warnings.append(f"消耗品費が{max_count}行超: {row}")
-            continue
-        setv(S3, f"F{r}", row.get("item", ""))
-        setv(S3, f"G{r}", row.get("amount"))
-
-    start = SHEET3_DATA_START["honorarium"]
-    max_count = SHEET3_MAX_ROWS["honorarium"]
-    for i, row in enumerate(data.get("honorarium_rows", [])):
-        r = start + i
-        if i >= max_count:
-            warnings.append(f"謝金が{max_count}行超: {row}")
-            continue
-        setv(S3, f"A{r}", row.get("item", ""))
-        setv(S3, f"B{r}", row.get("amount"))
-
-    start = SHEET3_DATA_START["domestic_travel"]
-    max_count = SHEET3_MAX_ROWS["domestic_travel"]
-    for i, row in enumerate(data.get("domestic_travel_rows", [])):
-        r = start + i
-        if i >= max_count:
-            warnings.append(f"国内旅費が{max_count}行超: {row}")
-            continue
-        setv(S3, f"C{r}", row.get("item", ""))
-        setv(S3, f"D{r}", row.get("amount"))
-
-    start = SHEET3_DATA_START["foreign_travel"]
-    max_count = SHEET3_MAX_ROWS["foreign_travel"]
-    for i, row in enumerate(data.get("foreign_travel_rows", [])):
-        r = start + i
-        if i >= max_count:
-            warnings.append(f"外国旅費が{max_count}行超: {row}")
-            continue
-        setv(S3, f"E{r}", row.get("item", ""))
-        setv(S3, f"F{r}", row.get("amount"))
-
-    start = SHEET3_DATA_START["other"]
-    max_count = SHEET3_MAX_ROWS["other"]
-    for i, row in enumerate(data.get("other_rows", [])):
-        r = start + i
-        if i >= max_count:
-            warnings.append(f"その他費目が{max_count}行超: {row}")
-            continue
-        setv(S3, f"A{r}", row.get("item", ""))
-        setv(S3, f"B{r}", row.get("amount"))
-
-    # 各費目の総計：数式ではなく数値で直接書き込む
-    # （LibreOffice の recalc を通すとフォント色や条件付き書式が劣化するため、
-    #   Python 側で合計を計算して数値で書き、recalc 不要にする）
-    def sum_amount(rows, key="amount"):
-        return sum((r.get(key) or 0) for r in rows)
-
-    setv(S3, "E9", sum_amount(data.get("equipment_rows", [])))
-    setv(S3, "G9", sum_amount(data.get("consumables_rows", [])))
-    setv(S3, "B17", sum_amount(data.get("honorarium_rows", [])))
-    setv(S3, "D17", sum_amount(data.get("domestic_travel_rows", [])))
-    setv(S3, "F17", sum_amount(data.get("foreign_travel_rows", [])))
-    setv(S3, "B27", sum_amount(data.get("other_rows", [])))
-
-    # 必要性
-    for key, (sheet, coord) in SHEET3_NECESSITIES.items():
-        if key in data:
-            setv(sheet, coord, data[key])
-
-    # ---- 4枚目 ----
-    for i, row in enumerate(data.get("api_rows", [])):
-        r = SHEET4_API_START_ROW + i
-        if r > 14:
-            warnings.append(f"API費用が10行超: {row}")
-            continue
-        setv("研究計画調書_4枚目", f"B{r}", row.get("target", ""))
-        setv("研究計画調書_4枚目", f"C{r}", row.get("amount"))
-        setv("研究計画調書_4枚目", f"D{r}", row.get("basis", ""))
-
-    for i, row in enumerate(data.get("compute_rows", [])):
-        r = SHEET4_COMPUTE_START_ROW + i
-        if r > 27:
-            warnings.append(f"計算資源費用が10行超: {row}")
-            continue
-        setv("研究計画調書_4枚目", f"B{r}", row.get("gpu", ""))
-        setv("研究計画調書_4枚目", f"C{r}", row.get("rationale", ""))
-        setv("研究計画調書_4枚目", f"D{r}", row.get("amount"))
-        setv("研究計画調書_4枚目", f"E{r}", row.get("basis", ""))
-
-    wb.save(output_path)
+    # テンプレを ZIP として読み、各 sheet*.xml を必要に応じて書き換える
+    with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(
+        dst, "w", zipfile.ZIP_DEFLATED
+    ) as zout:
+        for item in zin.infolist():
+            name = item.filename
+            payload = zin.read(name)
+            if name == SHEET_PATHS["sheet1"]:
+                xml = payload.decode("utf-8")
+                xml = _write_sheet1(xml, data)
+                payload = xml.encode("utf-8")
+            elif name == SHEET_PATHS["sheet2"]:
+                xml = payload.decode("utf-8")
+                xml = _write_sheet2(xml, data)
+                payload = xml.encode("utf-8")
+            elif name == SHEET_PATHS["sheet3"]:
+                xml = payload.decode("utf-8")
+                xml = _write_sheet3(xml, data)
+                payload = xml.encode("utf-8")
+            elif name == SHEET_PATHS["sheet4"]:
+                xml = payload.decode("utf-8")
+                xml = _write_sheet4(xml, data)
+                payload = xml.encode("utf-8")
+            elif name == "xl/workbook.xml":
+                # 文字数カウント・経費合計などの数式を Excel 起動時に
+                # 強制再計算させる
+                xml = payload.decode("utf-8")
+                xml = _enable_full_calc_on_load(xml)
+                payload = xml.encode("utf-8")
+            zout.writestr(item, payload)
     return warnings
 
 
+def resolve_template(language: str, override: str | None) -> Path:
+    if override:
+        return Path(override)
+    if language == "en":
+        return TEMPLATE_EN
+    return TEMPLATE_JA
+
+
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument(
-        "--template",
-        default=str(DEFAULT_TEMPLATE),
-        help=f"テンプレートパス（省略時はスキル同梱: {DEFAULT_TEMPLATE}）",
+    p = argparse.ArgumentParser(
+        description="第2回 SPReAD 様式1 書き込み（openpyxl 非依存版）"
     )
-    p.add_argument("--data", required=True, help="JSON file with build_empty_payload() schema")
+    p.add_argument("--language", choices=["ja", "en"], default="ja")
+    p.add_argument("--template", default=None)
+    p.add_argument("--data", required=True)
     p.add_argument("--output", required=True)
     args = p.parse_args()
 
     with open(args.data, "r", encoding="utf-8") as f:
         data = json.load(f)
+    if not data.get("language"):
+        data["language"] = args.language
 
-    warnings = fill(args.template, data, args.output)
+    template = resolve_template(data["language"], args.template)
+    if not template.exists():
+        raise FileNotFoundError(f"テンプレートが見つかりません: {template}")
+
+    warnings = fill(str(template), data, args.output)
     print(f"Wrote: {args.output}")
+    print(f"Template used: {template}")
     if warnings:
         print("\n警告:")
         for w in warnings:

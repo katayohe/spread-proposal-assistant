@@ -77,9 +77,12 @@ Q3. モデル規模は？
 python3 scripts/fetch_aws_price.py ec2 p4d.24xlarge ap-northeast-1
 python3 scripts/fetch_aws_price.py ec2 g5.xlarge ap-northeast-1
 
-# Bedrock トークン単価（入出力）
-python3 scripts/fetch_aws_price.py bedrock anthropic.claude-sonnet-4-20250514 us-east-1 --io input
-python3 scripts/fetch_aws_price.py bedrock anthropic.claude-sonnet-4-20250514 us-east-1 --io output
+# Bedrock トークン単価（入出力）。
+# デフォルトモデルは Claude Opus 4.7、デフォルトリージョンは ap-northeast-1（東京）。
+# ユーザーが他モデル・他リージョンを明示した場合のみそちらを使う。
+# 例: anthropic.claude-opus-4-7 / amazon.titan-text-express-v1 / meta.llama3-3-70b-instruct-v1:0 など
+python3 scripts/fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io input
+python3 scripts/fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io output
 
 # S3 Standard
 python3 scripts/fetch_aws_price.py s3 standard ap-northeast-1
@@ -94,3 +97,9 @@ python3 scripts/fetch_aws_price.py s3 standard ap-northeast-1
 - SageMaker と EC2 の使い分け：https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html
 
 SPReAD の研究期間（最大6ヶ月）では、1年以上コミットする Savings Plans/Reserved は不向き。基本オンデマンド、Spot は中断許容できる学習ワークロードでのみ部分適用が現実解。
+
+## 補足：HPCI 特定研究有償課題（参考、本スキルでは扱わない）
+
+第2回公募要領には、SPReAD 採択者向けに **HPCI（革新的ハイパフォーマンス・コンピューティング・インフラ）** の **「特定研究有償課題」** が新設されたことが明記された（令和8年6月上旬募集開始予定）。HPCI は富岳・東大／京大／東北大スパコン等を共通窓口でまとめて使える共用プラットフォームで、本枠は通常の課題審査を経ずに最低限の資格審査のみで1週間以内に利用開始でき、利用報告書・成果公開義務も原則免除される。詳細は HPCI ポータルサイトの「特定研究有償課題」ページを参照（公募要領に URL 記載あり）。
+
+本スキルは AWS を計算資源とする前提のため HPCI ヒアリング分岐は持たないが、4枚目の **計算資源費用テーブルの「選定理由」(E列)** で「データセンター連携／急ぎの利用開始／既存の AWS ベースのワークフロー との統合容易性」等を理由に AWS を選んだ旨を補強する材料として使うことができる。

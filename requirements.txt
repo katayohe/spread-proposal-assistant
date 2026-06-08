@@ -1,0 +1,17 @@
+# spread-proposal-assistant の依存ライブラリ
+#
+# インストール:
+#   pip install -r requirements.txt
+#
+# 一部の OS（Debian/Ubuntu の system Python など）では PEP 668 により
+# システムワイドな pip install が拒否されるため、その場合は --break-system-packages
+# を付けるか、仮想環境（venv）を作ってからインストールしてください。
+#   python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# validate.py で xlsx を読み取り検証する用途のみで使用。
+# fill_workbook.py は openpyxl を使わず、zipfile + 文字列置換でテンプレを書き換える。
+openpyxl>=3.1,<4.0
+
+# AWS Price List Bulk API（数百MB）の JSON ストリーム解析
+# scripts/fetch_aws_price.py で products / terms.OnDemand を kvitems で巡回するため
+ijson>=3.0,<4.0

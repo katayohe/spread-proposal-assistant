@@ -17,7 +17,9 @@ AWS Price List Bulk API（認証不要・公開）にアクセスし、
 使い方（CLI）::
 
     python3 fetch_aws_price.py ec2 p4de.24xlarge ap-northeast-1
-    python3 fetch_aws_price.py bedrock anthropic.claude-sonnet-4-20250514 us-east-1 --io output
+    # Bedrock のデフォルトは Claude Opus 4.7、リージョンは ap-northeast-1（東京）。
+    # ユーザーが自発的に他モデル・他リージョンを指定した場合のみそちらを使う。
+    python3 fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io output
     python3 fetch_aws_price.py s3 standard ap-northeast-1
 
 ライブラリとして::

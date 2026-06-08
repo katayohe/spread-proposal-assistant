@@ -1,8 +1,8 @@
-# マスタリスト
+# マスタリスト（第2回公募版）
 
-`リスト` シートおよび「留意事項」タブに記載された選択肢。
+`リスト` シート（英語版は `List` シート）および「はじめにご確認ください）記入にあたっての留意事項」タブに記載された選択肢。第2回公募で「区分」が **「所属機関の区分」** と **「応募者属性の区分」** の2項目に分離された。
 
-## 研究領域（11区分）
+## 研究領域（11区分、A列）
 
 | 領域 | 定義 | 研究分野例 |
 |---|---|---|
@@ -17,7 +17,9 @@
 | 社会科学 | 行動・制度・組織・市場・政策・社会構造 | 法制度、政治学、経済・経営学、社会学、心理学 等 |
 | 芸術・人文科学 | 文化、歴史、思想、言語、表現、価値形成 | 哲学、芸術学、文学・言語、歴史学 等 |
 
-## メインユースケース分類（9区分）
+英語版選択肢: `Clinical Science` / `Life Sciences / Pharmacy` / `Chemistry` / `Mechanical / Infrastructure / Energy Engineering` / `Materials / Process / Applied Biomedical Engineering` / `Electrical Engineering / Electronic Engineering / Information Science / Computer Science` / `Mathematics / Physics / Earth Sciences` / `Agriculture / Environmental Science / Ecology` / `Social Sciences` / `Arts / Humanities`
+
+## メインユースケース分類（9区分、B列）
 
 ### 開発系
 
@@ -35,26 +37,43 @@
 
 ### その他
 
-9. **その他** — 理論的研究や Science for AI に近い研究（可能な限り上記から選ぶ）
+9. **その他** — 理論的研究や Science for AI に近い研究（可能な限り上記から選ぶ／選んだ場合は1枚目 C31 に自由記述必須）
 
-## サブユースケース（複数選択可）
+英語版選択肢: 順に `1. Training Dataset Construction` / `2. Adaptation of Existing Models` / `3. AI Model Development` / `4. Evaluation of Existing Models` / `5. Experimental Automation / Autonomization` / `6. Simulation / Digital Twin` / `7. Discovery / Design Support` / `8. Advanced Data Analysis / Modeling` / `9. Other`
+
+## サブユースケース（複数選択可・8項目）
 
 1.学習用データセット構築 / 2.既存モデルの適応 / 3.AIモデル開発 / 4.既存モデル評価 / 5.実験自動化・自律化 / 6.シミュレーション・デジタルツイン / 7.発見・設計支援 / 8.高度データ解析・モデリング
 
-## 区分（身分）
+該当するセル（1枚目 C32, E32, G32, I32, C33, E33, G33, I33）に `Y` を入れる。
 
-- 大学・研究機関等の教員・研究員等
-- 高等専門学校の教員・研究者等
-- ポストドクター
-- 大学院博士課程在籍者
-- 大学院修士課程在籍者
+## 所属機関の区分（C列、6区分）
+
+- 大学
+- 高等専門学校
+- 公的研究機関
+- 民間企業
+- 非営利団体・公益法人
+- その他（上記のいずれにも該当しない場合に限る）
+
+英語版: `University` / `Technical College (Kosen)` / `Public Research Institution` / `Private Company` / `Non-Profit Organization / Public Interest Corporation` / `Other (only if none of the above apply)`
+
+## 応募者属性の区分（D列、8区分、第2回新設）
+
+- 教員
+- 研究員(ポスドク含む)
+- 博士課程学生
+- 修士課程学生
 - 学部学生
-- 高等専門学校の学生
-- 民間企業の研究者
-- 非営利団体等の研究者等
-- その他
+- 技術職員・事務職員・URA等
+- 技術者・開発者
+- その他（上記のいずれにも該当しない場合に限る）
 
-## 現在のAI利活用度合い（複数選択可・10項目）
+英語版: `Faculty Member` / `Researcher (including Postdoc)` / `Doctoral Student` / `Master's Student` / `Undergraduate Student` / `Technical / Administrative Staff / URA, etc.` / `Engineer / Developer` / `Other (only if none of the above apply)`
+
+学生（博士／修士／学部）が研究代表者として応募する場合は、別途 様式3（学生応募の同意確認書）と様式4（指導教員等の同意確認書）の提出が必要。
+
+## AI活用度（複数選択可・10項目、1枚目）
 
 1. 研究でAIをまったく使っていない
 2. 研究そのもの以外の業務（メール・翻訳等）でAIを使っている
@@ -66,3 +85,5 @@
 8. APIにより既存AIを研究プロセスに組み込んでいる
 9. 自分でAI・深層学習モデルの開発（学習・評価の一連）を行い、研究に活用したことがある
 10. 新しい基盤モデル開発の経験がある
+
+該当するセル（1枚目 C39, E39, G39, I39, K39, C40, E40, G40, I40, K40）に `Y` を入れる。「直接的に採択可否には影響しない」と注記されているが、研究領域の AI 経験差異を踏まえた審査区分決定の参考情報として使用される。
