@@ -103,8 +103,8 @@ Skills が利用可能な環境（Amazon Quick Desktop, Claude Code, Codex, Kiro
 ただし、**最終的な提出前には文部科学省が配布している公式の形式チェックツールも併用することを強く推奨します**。公式ツールは様式1（Excel）と様式0/2/3/4（PDF）に対応しており、文部科学省側の判定基準に最も近い検証が行えます。
 
 - 📥 **公式形式チェックツールの配布元（Box フォルダ）**：[https://mext.ent.box.com/s/qf8vbuj3pso1hj9mwp1vs6rx2hashpuc/folder/385379226260](https://mext.ent.box.com/s/qf8vbuj3pso1hj9mwp1vs6rx2hashpuc/folder/385379226260)
-- [!IMPORTANT]
 
+> [!IMPORTANT]
 > **本スキルは公式形式チェックツールを利用していません。** また、ライセンス上の理由から公式ツールの **再配布も行っていません**。
 > 公式ツールをご利用の際は、上記 Box フォルダから直接ダウンロードしてください。参考となる、ダウンロード方法・実行手順は [SKILL.md の Step 7](./SKILL.md) に詳細を記載しています
 
