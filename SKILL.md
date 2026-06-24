@@ -62,15 +62,20 @@ spread-proposal-assistant/
 │   ├── fetch_aws_price.py                  (AWS Price List Bulk API から単価取得)
 │   ├── fill_workbook.py                (様式1への書き込み、XML文字列置換版、--language ja|en)
 │   └── validate.py                         (文字数・必須項目・合計一致の検証)
-└── call_materials/                         (元: 公募要領等)
-    ├── application_forms/                  ← 第2回公募ファイル（2nd_ prefix で第1回と区別）
-    │   ├── 2nd_spread_call_for_proposals.pdf   (第2回公募要領)
-    │   ├── 2nd_form0_checklist.docx            (第2回_様式0_申請様式チェックリスト)
-    │   ├── 2nd_form1_proposal.xlsx             (第2回_様式1_研究計画調書 日本語版) ← テンプレート本体
-    │   ├── 2nd_form1_proposal_en.xlsx          (2nd_Form1_Research Plan 英語版)     ← テンプレート本体
-    │   ├── 2nd_form2_review_consent.docx       (第2回_様式2_審査手法及び応募に係る情報の取扱い等に関する同意確認書)
-    │   ├── 2nd_form3_student_consent.docx      (第2回_様式3_学生応募の同意確認書)
-    │   └── 2nd_form4_advisor_consent.docx      (第2回_様式4_指導教員等の同意確認書)
+└── call_materials/                         (公募要領等)
+    ├── 2nd_spread_call_for_proposals.pdf    (第2回公募要領)
+    ├── application_forms_ja/               ← 日本語版様式
+    │   ├── 2nd_Form0_Application Form Checklist.docx
+    │   ├── 2nd_Form1_Research Plan.xlsx     ← テンプレート本体（日本語版）
+    │   ├── 2nd_Form2_Consent Confirmation Form Regarding Review Methods and Handling of Application Information.docx
+    │   ├── 2nd_Form3_Student Application Consent Confirmation Form.docx
+    │   └── 2nd_Form4_Advisor Consent Confirmation Form.docx
+    ├── application_forms_en/               ← 英語版様式
+    │   ├── 2nd_Form0_Application Form Checklist.docx
+    │   ├── 2nd_Form1_Research Plan.xlsx     ← テンプレート本体（英語版）
+    │   ├── 2nd_Form2_Consent Confirmation Form Regarding Review Methods and Handling of Application Information.docx
+    │   ├── 2nd_Form3_Student Application Consent Confirmation Form.docx
+    │   └── 2nd_Form4_Advisor Consent Confirmation Form.docx
     └── e_rad_guide/
         └── e_rad_operation_guide.pdf       (e-Rad 操作・入力ガイド、第2回別紙)
 ```
@@ -128,14 +133,25 @@ spread-proposal-assistant/
 
 4. **応募言語（日本語／英語）を確認**する。多くは日本語なのでデフォルトで日本語を提案。英語応募の場合は `--language en` でテンプレートを切り替える。
 
-5. 公募要領PDFの重要箇所は必要に応じて参照する：`pdftotext -layout "{SKILL_ROOT}/call_materials/application_forms/2nd_spread_call_for_proposals.pdf" -`
+5. 公募要領PDFの重要箇所は必要に応じて参照する：`pdftotext -layout "{SKILL_ROOT}/call_materials/2nd_spread_call_for_proposals.pdf" -`
 
 ### Step 1: キックオフヒアリング（AskUserQuestion）
 
 最初に以下5点をまとめて AskUserQuestion で聞く：
 
 1. 研究課題名（仮で可）
-2. 研究領域（`references/lists.md` の11領域から選択）
+2. 研究領域（以下の11区分から選択。**このリストをそのまま提示せよ。記憶や推測で代替してはならない。**）
+   1. 臨床科学
+   2. 生命科学・薬学
+   3. 化学
+   4. 機械・社会基盤・エネルギー工学
+   5. 材料・プロセス・応用医工学
+   6. 電気工学・電子工学・情報科学・コンピューターサイエンス
+   7. 数学・物理学・地球科学
+   8. 農学・環境学・生態学
+   9. 社会科学
+   10. 芸術・人文科学
+   11. その他
 3. メインユースケース分類（9区分から選択、「9.その他」は最後の手段）
 4. **第1回公募への応募経験**（採択 → 応募不可、不採択 → 再応募可、未応募 → 通常通り）
 5. ARiSE への共同代表者としての応募予定の有無（あれば本事業 SPReAD への応募は審査対象外になる）
@@ -197,11 +213,11 @@ spread-proposal-assistant/
 
 - 主な用途（LLM ファインチューニング／推論／データ前処理／ベクター検索 等）
 - 想定 GPU インスタンス（A100／H100／L40S／推論用 等、未定なら「要選定」）
-- 見込み稼働時間（時間/月 × 月数）
+- 見込み稼働時間（時間/月 × 月数、**研究期間は最大約6ヶ月**。12ヶ月や年額ベースで計算しないこと）
 - データ容量（S3 保管量・転送量）
 - 使用予定 AWS サービス（EC2, SageMaker, Bedrock, S3, EFS, ECR 等）
 - **APIを使うか**：API を使う／使わない（GPU 学習・推論のみ）のどちらか。**API利用そのものの要否だけ**を聞く（GPU での自前学習・推論のみで完結する研究では API 費用テーブル＝行9〜18 は空欄のまま提出）。
-- **モデル・リージョン選定はヒアリングしない**（質問項目を増やさないため）。API を使う場合の **デフォルトは `Amazon Bedrock 上の Claude Opus 4.7`、リージョンは `ap-northeast-1`（東京）**。算定根拠の `[備考]` に「研究者は具体モデル未定。本算定では Claude Opus 4.7（東京リージョン）を仮置きし、応募後にモデル選定を詰める想定」と明記する。ユーザーが自発的に具体モデル名・他リージョンを出した場合のみ、そちらを優先する。
+- **モデル・リージョン選定はヒアリングしない**（質問項目を増やさないため）。API を使う場合の **デフォルトは `Amazon Bedrock 上の Claude Sonnet 4.6`、リージョンは `ap-northeast-1`（東京）**。算定根拠の `[備考]` に「研究者は具体モデル未定。本算定では Claude Sonnet 4.6（東京リージョン、JP CRIS対応。CRIS利用時もソースリージョン=東京の単価で課金）を仮置きし、応募後にモデル選定を詰める想定」と明記する。ユーザーが自発的に具体モデル名・他リージョンを出した場合のみ、そちらを優先する。
 - **サードパーティ API（AWS 以外）は提案禁止**：Elsevier・Qdrant・OpenAI・Anthropic 直接・Pinecone・Weaviate・Cohere・Hugging Face Inference Endpoints 等は、ユーザーが「○○を使いたい」と自発的に言わない限り**追加しない**。研究内容上必要そうに思えても、エージェント側から提案しない。必要かどうかを確認したい場合は AskUserQuestion で「この研究で AWS 以外の外部 API を使う予定はありますか？」と明示的に聞く。
 
 #### 5-2. AWS 公開料金 API から**必要なサービスだけ**取得
@@ -210,9 +226,9 @@ spread-proposal-assistant/
 
 ```bash
 python3 spread-proposal-assistant/scripts/fetch_aws_price.py ec2 p4de.24xlarge ap-northeast-1
-# Bedrock を使う場合のみ。デフォルトは Claude Opus 4.7 / ap-northeast-1（東京）
-python3 spread-proposal-assistant/scripts/fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io input
-python3 spread-proposal-assistant/scripts/fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io output
+# Bedrock を使う場合のみ。デフォルトは Claude Sonnet 4.6 / ap-northeast-1（東京）
+python3 spread-proposal-assistant/scripts/fetch_aws_price.py bedrock anthropic.claude-sonnet-4-6-v1 ap-northeast-1 --io input
+python3 spread-proposal-assistant/scripts/fetch_aws_price.py bedrock anthropic.claude-sonnet-4-6-v1 ap-northeast-1 --io output
 python3 spread-proposal-assistant/scripts/fetch_aws_price.py s3 standard ap-northeast-1
 ```
 
@@ -225,7 +241,7 @@ python3 spread-proposal-assistant/scripts/fetch_aws_price.py s3 standard ap-nort
 - API費用テーブル（行9〜18、列 D処理対象 / E金額 / F算定根拠）— 該当時のみ（Bedrock 等）
 - 計算資源費用テーブル（行22〜31、列 D GPU種類 / E選定理由 / F金額 / G算定根拠）
 
-選定理由では「学習データ量・モデル規模から A100 80GB 以上が必要」等、研究要件と結びつけて書く。算定根拠では「$X/時 × Y時間/月 × Zヶ月 × 為替150円/USD = ◯千円」のように式を明示する。**為替レートはユーザーに確認（所属機関の会計基準に従う）。**
+選定理由では「学習データ量・モデル規模から A100 80GB 以上が必要」等、研究要件と結びつけて書く。算定根拠では「$X/時 × Y時間/月 × Zヶ月 × 為替150円/USD = ◯千円」のように式を明示する。**月数Zは研究期間（交付決定日〜令和9年2月5日、最大約6ヶ月）を超えないこと。「×12ヶ月」や年額ベースの計算は誤り。** **為替レートはユーザーに確認（所属機関の会計基準に従う）。**
 
 ### Step 6: xlsx への書き込み
 

@@ -66,9 +66,9 @@ Q3. モデル規模は？
 ## Spot / Savings Plans の検討
 
 - **Spot**：最大70〜90%OFF。ただし中断リスク。**チェックポイント頻繁保存前提**でないと使えない。短期研究ではリスク／リターン検討要。
-- **Savings Plans (1年)**：20〜30%OFF 相当。研究期間6ヶ月には**不向き**（残期間無駄）。
+- **Savings Plans (1年)**：20〜30%OFF 相当。研究期間（最大約6ヶ月）には**不向き**（残期間無駄）。
 - **Reserved Instances**：同上、不向き。
-- **結論**：SPReAD の6ヶ月研究では基本オンデマンド。Spot は **実験用途で中断許容できる場合のみ** 部分適用。
+- **結論**：SPReAD の研究期間（交付決定日〜令和9年2月5日、最大約6ヶ月）では基本オンデマンド。Spot は **実験用途で中断許容できる場合のみ** 部分適用。
 
 ## `fetch_aws_price.py` を呼ぶときのテンプレート
 
@@ -78,10 +78,10 @@ python3 scripts/fetch_aws_price.py ec2 p4d.24xlarge ap-northeast-1
 python3 scripts/fetch_aws_price.py ec2 g5.xlarge ap-northeast-1
 
 # Bedrock トークン単価（入出力）。
-# デフォルトモデルは Claude Opus 4.7、デフォルトリージョンは ap-northeast-1（東京）。
+# デフォルトモデルは Claude Sonnet 4.6、デフォルトリージョンは ap-northeast-1（東京）。
 # ユーザーが他モデル・他リージョンを明示した場合のみそちらを使う。
-# 例: anthropic.claude-opus-4-7 / amazon.titan-text-express-v1 / meta.llama3-3-70b-instruct-v1:0 など
-python3 scripts/fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io input
+# 例: anthropic.claude-sonnet-4-6-v1 / amazon.titan-text-express-v1 / meta.llama3-3-70b-instruct-v1:0 など
+python3 scripts/fetch_aws_price.py bedrock anthropic.claude-sonnet-4-6-v1 ap-northeast-1 --io input
 python3 scripts/fetch_aws_price.py bedrock anthropic.claude-opus-4-7 ap-northeast-1 --io output
 
 # S3 Standard
@@ -96,7 +96,7 @@ python3 scripts/fetch_aws_price.py s3 standard ap-northeast-1
 - Savings Plans / Reserved の使い分け：https://docs.aws.amazon.com/savingsplans/latest/userguide/what-is-savings-plans.html
 - SageMaker と EC2 の使い分け：https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html
 
-SPReAD の研究期間（最大6ヶ月）では、1年以上コミットする Savings Plans/Reserved は不向き。基本オンデマンド、Spot は中断許容できる学習ワークロードでのみ部分適用が現実解。
+SPReAD の研究期間（交付決定日〜令和9年2月5日、最大約6ヶ月）では、1年以上コミットする Savings Plans/Reserved は不向き。基本オンデマンド、Spot は中断許容できる学習ワークロードでのみ部分適用が現実解。**算定式の月数は研究期間内（最大6ヶ月）に収めること。12ヶ月や年額ベースの計算は誤り。**
 
 ## 補足：HPCI 特定研究有償課題（参考、本スキルでは扱わない）
 

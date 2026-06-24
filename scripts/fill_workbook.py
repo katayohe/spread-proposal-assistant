@@ -31,9 +31,8 @@ from pathlib import Path
 
 # スキルルート（このファイルの親の親）
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE_DIR = SKILL_ROOT / "call_materials" / "application_forms"
-TEMPLATE_JA = TEMPLATE_DIR / "2nd_form1_proposal.xlsx"
-TEMPLATE_EN = TEMPLATE_DIR / "2nd_form1_proposal_en.xlsx"
+TEMPLATE_JA = SKILL_ROOT / "call_materials" / "application_forms_ja" / "2nd_Form1_Research Plan.xlsx"
+TEMPLATE_EN = SKILL_ROOT / "call_materials" / "application_forms_en" / "2nd_Form1_Research Plan.xlsx"
 
 # シート→XMLパス対応
 # 日本語版・英語版とも同じ（テンプレートが共通設計のため）

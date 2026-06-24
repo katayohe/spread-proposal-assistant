@@ -51,11 +51,13 @@ spread-proposal-assistant/
 │   ├── fill_workbook.py        # 様式1への書き込み（XML文字列置換、--language ja|en）
 │   └── validate.py             # 文字数・必須項目・合計一致の検証
 └── call_materials/             # SPReAD 第2回公募要領・研究計画調書テンプレート等（※）
-    ├── application_forms/      # 第2回公募の様式 (2nd_ prefix)
+    ├── 2nd_spread_call_for_proposals.pdf  # 第2回公募要領
+    ├── application_forms_ja/   # 日本語版様式
+    ├── application_forms_en/   # 英語版様式
     └── e_rad_guide/            # e-Rad 操作・入力ガイド (第2回別紙)
 ```
 
-**※ `call_materials/` 内の資料は、[SPReAD 公式サイト](https://www.mext.go.jp/aifors_spread/)から第2回公募開始時点（2026年6月8日）に取得した内容です。公募側で改訂があった場合は最新版をご確認ください。**
+**※ `call_materials/` 内の資料は、[SPReAD 公式サイト](https://www.mext.go.jp/aifors_spread/)から第2回公募開始時点（2026年6月24日）に取得した内容です。公募側で改訂があった場合は最新版をご確認ください。**
 
 ---
 
